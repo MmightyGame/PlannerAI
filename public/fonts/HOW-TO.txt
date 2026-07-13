@@ -1,0 +1,6 @@
+לזרוק לכאן את קובץ הפונט Futura 100 Heb בשם:
+futura-100-heb.woff2  (הכי טוב)
+או
+futura-100-heb.otf
+
+עד אז האתר רץ על Heebo.

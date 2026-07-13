@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/* פונט Futura 100 Heb - זורקים את קובץ הפונט לתיקייה public/fonts
+   בשם futura-100-heb.woff2 (או otf) והוא נטען אוטומטית */
+@font-face {
+  font-family: "Futura 100 Heb";
+  src: url("/fonts/futura-100-heb.woff2") format("woff2"),
+    url("/fonts/futura-100-heb.otf") format("opentype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --bg: #f6f4ef;
+  --card: #ffffff;
+  --ink: #1c2a24;
+  --muted: #6b7a72;
+  --green: #0c5138;
+  --green-dark: #093d2a;
+  --line: #e6e1d4;
+  --sand: #efe9dc;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.plan-md h1,
+.plan-md h2,
+.plan-md h3 {
+  font-weight: 700;
+  color: var(--green);
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.plan-md h1 { font-size: 1.35rem; }
+.plan-md h2 { font-size: 1.2rem; }
+.plan-md h3 { font-size: 1.05rem; }
+
+.plan-md p { margin-bottom: 0.6rem; line-height: 1.7; }
+
+.plan-md ul, .plan-md ol {
+  padding-inline-start: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.plan-md li { margin-bottom: 0.3rem; line-height: 1.65; }
+.plan-md ul li { list-style: disc; }
+.plan-md ol li { list-style: decimal; }
+.plan-md strong { color: var(--ink); }
+.plan-md hr { border-color: var(--line); margin: 1rem 0; }
+
+.plan-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+.plan-md th, .plan-md td {
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.6rem;
+  text-align: right;
+}
+
+.plan-md th { background: var(--sand); }
+
+/* חשיפת טקסט מילה-מילה: opacity + הזזה קטנה כלפי מעלה */
+@keyframes wordIn {
+  from { opacity: 0; transform: translateY(7px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+.word-in {
+  display: inline-block;
+  animation: wordIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* אינדיקטור "חושב" - טקסט עם ברק שזז */
+@keyframes thinkingShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.thinking-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--muted) 30%,
+    var(--green) 50%,
+    var(--muted) 70%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinkingShimmer 1.6s linear infinite;
+  font-weight: 700;
+}
+
+@keyframes thinkingDot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.thinking-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--green);
+  animation: thinkingDot 1.2s ease-in-out infinite;
+}
