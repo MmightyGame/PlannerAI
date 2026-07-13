@@ -63,6 +63,42 @@ function parseFlightMarker(content: string): { dest: string; month: string; nigh
   return { dest: m[1].trim(), month: m[2], nights: m[3] || "" };
 }
 
+// זיהוי עיר+חודש ישירות מההודעה של המשתמש, בלי לסמוך על ה-AI (Gemini טועה ביעד).
+// ממויין מהארוך לקצר כדי לתפוס "אבו דאבי" לפני "דאבי" וכו'.
+const HE_CITIES = [
+  "אבו דאבי", "לוס אנג'לס", "ניו יורק", "דוברובניק", "קופנהגן", "שטוקהולם", "פרנקפורט",
+  "אמסטרדם", "בוקרשט", "איסטנבול", "ברצלונה", "סנטוריני", "מיקונוס", "זקינטוס", "טביליסי",
+  "סלוניקי", "אנטליה", "באטומי", "ירוואן", "בנגקוק", "מלטה", "אתונה", "בודפשט", "פראג",
+  "וינה", "זלצבורג", "מינכן", "ברלין", "בריסל", "לונדון", "פריז", "רומא", "מילאנו", "ונציה",
+  "נאפולי", "מדריד", "ליסבון", "פורטו", "סופיה", "ורנה", "בורגס", "טירנה", "זאגרב", "ורשה",
+  "קרקוב", "וילנה", "ריגה", "כרתים", "רודוס", "קורפו", "קוס", "לרנקה", "פאפוס", "קפריסין",
+  "פוקט", "טוקיו", "מיאמי", "ציריך", "ז'נבה", "אוסלו", "באקו", "דובאי",
+];
+const HE_MONTHS = [
+  "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
+  "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
+];
+
+function detectFlightRequest(text: string): { dest: string; month: string; nights: string } | null {
+  const dest = HE_CITIES.find((c) => text.includes(c));
+  if (!dest) return null;
+  let monthIdx = -1;
+  for (let i = 0; i < HE_MONTHS.length; i++) {
+    if (text.includes(HE_MONTHS[i])) {
+      monthIdx = i;
+      break;
+    }
+  }
+  if (monthIdx < 0) return null;
+  const now = new Date();
+  const yearMatch = text.match(/20\d\d/);
+  let year = yearMatch ? Number(yearMatch[0]) : now.getFullYear();
+  if (!yearMatch && monthIdx < now.getMonth()) year += 1; // החודש כבר עבר השנה -> שנה הבאה
+  const month = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+  const nm = text.match(/(\d+)\s*(?:לילות|לילה|ימים|יום)/);
+  return { dest, month, nights: nm ? nm[1] : "" };
+}
+
 function stripQuestions(content: string): string {
   return content
     .replace(/^\s*\[Q\].*$/gm, "")
@@ -276,8 +312,11 @@ function Chat() {
   const hasPlan = messages.some((m) => m.role === "assistant" && m.content.length > 600);
 
   const lastMsg = messages[messages.length - 1];
+  // אם ה-AI ביקש להציג טיסות, בחירת הטיסה קודמת - לא מציגים שאלות באותו רגע
   const pendingQuestions =
-    !busy && lastMsg?.role === "assistant" ? extractQuestions(lastMsg.content) : [];
+    !busy && lastMsg?.role === "assistant" && !parseFlightMarker(lastMsg.content)
+      ? extractQuestions(lastMsg.content)
+      : [];
 
   async function send(text: string, history: Msg[]) {
     const userMsg: Msg = { role: "user", content: text };
@@ -309,6 +348,38 @@ function Chat() {
       setMessages([...nextHistory, { role: "assistant", content: "החיבור נפל באמצע. שלח שוב ונמשיך מאיפה שהיינו." }]);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runPackageSearch(
+    req: { dest: string; month: string; nights: string },
+    history: Msg[]
+  ) {
+    setSearching(true);
+    try {
+      const qs = new URLSearchParams({
+        dest: req.dest,
+        origin: sp.get("origin") ?? "TLV",
+        dateMode: "month",
+        month: req.month,
+        adults: sp.get("adults") ?? "2",
+        rooms: sp.get("rooms") ?? "1",
+      });
+      if (req.nights) qs.set("nights", req.nights);
+      const res = await fetch(`/api/search?${qs.toString()}`);
+      const data = res.ok ? await res.json() : null;
+      setSearching(false);
+      if (data?.packages?.length > 0) {
+        setPackages(data.packages);
+      } else {
+        // לא נמצאו טיסות אמיתיות - שה-AI ימשיך לתכנן בלי מחיר טיסה מדויק
+        send(
+          `לא נמצאו טיסות אמיתיות ל${req.dest} בחודש ${req.month}. תתכנן בלי הריבועים, תשתמש בהערכת מחיר טיסה ותציין שזו הערכה.`,
+          history
+        );
+      }
+    } catch {
+      setSearching(false);
     }
   }
 
@@ -350,34 +421,8 @@ function Chat() {
     const key = `${req.dest}|${req.month}|${req.nights}`;
     if (flightMarkerRef.current === key) return;
     flightMarkerRef.current = key;
-    (async () => {
-      setSearching(true);
-      try {
-        const qs = new URLSearchParams({
-          dest: req.dest,
-          origin: sp.get("origin") ?? "TLV",
-          dateMode: "month",
-          month: req.month,
-          adults: sp.get("adults") ?? "2",
-          rooms: sp.get("rooms") ?? "1",
-        });
-        if (req.nights) qs.set("nights", req.nights);
-        const res = await fetch(`/api/search?${qs.toString()}`);
-        const data = res.ok ? await res.json() : null;
-        setSearching(false);
-        if (data?.packages?.length > 0) {
-          setPackages(data.packages);
-        } else {
-          // לא נמצאו טיסות אמיתיות - שה-AI ימשיך לתכנן בלי מחיר טיסה מדויק
-          send(
-            `לא נמצאו טיסות אמיתיות ל${req.dest} בחודש ${req.month}. תתכנן בלי הריבועים, תשתמש בהערכת מחיר טיסה ותציין שזו הערכה.`,
-            messages
-          );
-        }
-      } catch {
-        setSearching(false);
-      }
-    })();
+    runPackageSearch(req, messages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, busy, packages, sp]);
 
   useEffect(() => {
@@ -407,8 +452,17 @@ function Chat() {
 
   function handleSubmit() {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || searching) return;
     setInput("");
+    // אם המשתמש כתב עיר + חודש - מזהים לבד ומציגים ריבועי טיסות אמיתיים, בלי לתת ל-AI לטעות ביעד
+    const req = !packages ? detectFlightRequest(text) : null;
+    if (req) {
+      const hist: Msg[] = [...messages, { role: "user", content: text }];
+      setMessages(hist);
+      flightMarkerRef.current = `${req.dest}|${req.month}|${req.nights}`;
+      runPackageSearch(req, hist);
+      return;
+    }
     send(text, messages);
   }
 
