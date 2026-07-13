@@ -42,6 +42,27 @@ function airlineName(code: string): string {
   return AIRLINES[code] ?? code;
 }
 
+// לוגו חברת התעופה מה-CDN של Travelpayouts, עם נפילה לטקסט אם אין לוגו
+function AirlineTag({ code }: { code: string }) {
+  const [err, setErr] = useState(false);
+  if (err || !code) {
+    return (
+      <span className="rounded-full bg-[var(--sand)] px-2.5 py-0.5 text-xs font-bold text-[var(--ink)]/70">
+        {airlineName(code)}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={`https://pics.avs.io/120/40/${code}.png`}
+      alt={airlineName(code)}
+      title={airlineName(code)}
+      onError={() => setErr(true)}
+      className="h-6 w-auto max-w-[96px] object-contain"
+    />
+  );
+}
+
 function fmtDT(iso: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -153,9 +174,7 @@ function PackageCard({ pkg, onChoose }: { pkg: PackageOption; onChoose: () => vo
     <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm transition hover:border-[var(--green)]/50 hover:shadow-md">
       <div className="flex items-center justify-between">
         <div className="text-lg font-black">{f.cityHe}</div>
-        <span className="rounded-full bg-[var(--sand)] px-2.5 py-0.5 text-xs font-bold text-[var(--ink)]/70">
-          {airlineName(f.airline)}
-        </span>
+        <AirlineTag code={f.airline} />
       </div>
 
       <div className="mt-3 space-y-1 text-sm">

@@ -212,19 +212,41 @@ export async function searchFlights(params: FlightSearchParams): Promise<{
     all = all.filter((f) => f.departureAt.slice(0, 10) >= params.from && f.returnAt.slice(0, 10) <= params.to);
   }
 
-  const filters: ((f: FlightOption) => boolean)[] = [];
-  if (effectiveNights) filters.push((f) => Math.abs(f.nights - effectiveNights!) <= 2);
-  if (params.weekends) filters.push((f) => isWeekendTrip(f.departureAt, f.returnAt));
-  if (params.direct) filters.push((f) => f.transfers === 0);
+  // סינונים רכים: לילות, סופ"ש, וקרבה לתאריך המדויק שנבחר (עד שבוע)
+  const soft: ((f: FlightOption) => boolean)[] = [];
+  if (effectiveNights) soft.push((f) => Math.abs(f.nights - effectiveNights!) <= 2);
+  if (params.weekends) soft.push((f) => isWeekendTrip(f.departureAt, f.returnAt));
+  const exactTarget =
+    params.dateMode === "exact" && params.from ? new Date(params.from).getTime() : null;
+  if (exactTarget !== null) {
+    soft.push((f) => Math.abs(new Date(f.departureAt.slice(0, 10)).getTime() - exactTarget) <= 7 * 86400000);
+  }
 
-  const strict = all.filter((f) => filters.every((fn) => fn(f)));
-  const chosen = strict.length > 0 ? strict : all;
-  const relaxed = strict.length === 0 && all.length > 0 && filters.length > 0;
+  const filtered = all.filter((f) => soft.every((fn) => fn(f)));
+  let pool = filtered.length > 0 ? filtered : all;
 
-  // הכי זולות קודם, מקסימום 6, בלי כפילויות של אותה עיר+תאריך
+  // ברירת מחדל: מעדיפים טיסות ישירות. אם אין ישירות מציגים עם עצירות,
+  // אלא אם המשתמש ביקש במפורש רק ישירות - אז רק ישירות
+  const directPool = pool.filter((f) => f.transfers === 0);
+  if (params.direct || directPool.length > 0) {
+    pool = directPool;
+  }
+
+  const relaxed = filtered.length === 0 && all.length > 0 && soft.length > 0;
+
+  // מיון: תאריכים מדויקים לפי קרבה לתאריך ואז מחיר, אחרת מחיר (ישירות כבר קודם בעדיפות)
+  const sorter =
+    exactTarget !== null
+      ? (a: FlightOption, b: FlightOption) =>
+          Math.abs(new Date(a.departureAt.slice(0, 10)).getTime() - exactTarget) -
+            Math.abs(new Date(b.departureAt.slice(0, 10)).getTime() - exactTarget) ||
+          a.price - b.price
+      : (a: FlightOption, b: FlightOption) => a.price - b.price;
+
+  // מקסימום 6, בלי כפילויות של אותה עיר+תאריך
   const seen = new Set<string>();
   const flights: FlightOption[] = [];
-  for (const f of chosen.sort((a, b) => a.price - b.price)) {
+  for (const f of [...pool].sort(sorter)) {
     const key = `${f.iata}-${f.departureAt.slice(0, 10)}`;
     if (seen.has(key)) continue;
     seen.add(key);
