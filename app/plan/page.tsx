@@ -121,26 +121,43 @@ function inferYear(month: number, day: number, explicit?: number): number {
   return d < today ? now.getFullYear() + 1 : now.getFullYear();
 }
 
-// מזהה תאריכים מדויקים מההודעה: "18-24.9", "18.9 עד 24.9", "18-24 בספטמבר", "18.9" + לילות
+// מזהה תאריכים מדויקים מההודעה: "18-24.9", "18.9 עד 24.9", "18-24 בספטמבר",
+// "18 לספטמבר עד 24 לספטמבר", "18.9" + לילות
 function parseDates(text: string, nights: number | null): { from: string; to: string } | null {
   const yr = text.match(/20\d\d/);
   const explicit = yr ? Number(yr[0]) : undefined;
+  const monthAlt = HE_MONTHS.join("|");
+
+  // שני תאריכים עם שם חודש: "18 לספטמבר עד 24 לספטמבר", "18 בספטמבר - 24 באוקטובר"
+  const named = [...text.matchAll(new RegExp(`(\\d{1,2})\\s*(?:ב|ל)?(${monthAlt})`, "g"))];
+  if (named.length >= 2) {
+    const a = named[0], b = named[1];
+    const am = HE_MONTHS.indexOf(a[2]) + 1, bm = HE_MONTHS.indexOf(b[2]) + 1;
+    const ay = inferYear(am, +a[1], explicit), by = inferYear(bm, +b[1], explicit);
+    return { from: `${ay}-${pad(am)}-${pad(+a[1])}`, to: `${by}-${pad(bm)}-${pad(+b[1])}` };
+  }
+  // טווח עם שם חודש אחד: "18-24 בספטמבר", "18 עד 24 בספטמבר"
+  let m = text.match(new RegExp(`(\\d{1,2})\\s*(?:[-–]|עד)\\s*(\\d{1,2})\\s*(?:ב|ל)?(${monthAlt})`));
+  if (m) {
+    const mon = HE_MONTHS.indexOf(m[3]) + 1;
+    const d1 = +m[1], d2 = +m[2], y = inferYear(mon, d1, explicit);
+    return { from: `${y}-${pad(mon)}-${pad(d1)}`, to: `${y}-${pad(mon)}-${pad(d2)}` };
+  }
+  // תאריך יחיד עם שם חודש + לילות: "18 בספטמבר ל-5 לילות"
+  if (named.length === 1 && nights) {
+    const a = named[0], mon = HE_MONTHS.indexOf(a[2]) + 1, d = +a[1];
+    const y = inferYear(mon, d, explicit);
+    const from = new Date(y, mon - 1, d);
+    const to = new Date(from.getTime() + nights * 86400000);
+    return { from: `${y}-${pad(mon)}-${pad(d)}`, to: `${to.getFullYear()}-${pad(to.getMonth() + 1)}-${pad(to.getDate())}` };
+  }
 
   // טווח באותו חודש מספרי: "18-24.9"
-  let m = text.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s*[./]\s*(\d{1,2})/);
+  m = text.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s*[./]\s*(\d{1,2})/);
   if (m) {
     const d1 = +m[1], d2 = +m[2], mon = +m[3];
     const y = inferYear(mon, d1, explicit);
     return { from: `${y}-${pad(mon)}-${pad(d1)}`, to: `${y}-${pad(mon)}-${pad(d2)}` };
-  }
-  // טווח עם שם חודש: "18-24 בספטמבר"
-  m = text.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s+ב?([א-ת]+)/);
-  if (m) {
-    const mon = HE_MONTHS.indexOf(m[3]) + 1;
-    if (mon > 0) {
-      const d1 = +m[1], d2 = +m[2], y = inferYear(mon, d1, explicit);
-      return { from: `${y}-${pad(mon)}-${pad(d1)}`, to: `${y}-${pad(mon)}-${pad(d2)}` };
-    }
   }
   // שני תאריכים מספריים: "18.9 ... 24.9"
   const dm = [...text.matchAll(/(\d{1,2})\s*[./]\s*(\d{1,2})(?:\s*[./]\s*(\d{2,4}))?/g)];
