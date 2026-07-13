@@ -165,31 +165,47 @@ export async function searchFlights(params: FlightSearchParams): Promise<{
   }
 
   const perDest = targets.length === 1 ? 30 : 10;
-  const results = await Promise.allSettled(
-    targets.map(async (t) => {
-      const raw = await fetchPrices(origin, t.iata, departureAt, returnAt, perDest, token);
-      return raw.map((r) => {
-        const o = r as Record<string, unknown>;
-        return {
-          cityHe: t.cityHe,
-          cityEn: t.en,
-          iata: t.iata,
-          price: Number(o.price),
-          departureAt: String(o.departure_at ?? ""),
-          returnAt: String(o.return_at ?? ""),
-          airline: String(o.airline ?? ""),
-          transfers: Number(o.transfers ?? 0),
-          nights: o.return_at ? toNights(String(o.departure_at), String(o.return_at)) : 0,
-          link: String(o.link ?? ""),
-        } satisfies FlightOption;
-      });
-    })
-  );
 
-  let all = results
-    .filter((r): r is PromiseFulfilledResult<FlightOption[]> => r.status === "fulfilled")
-    .flatMap((r) => r.value)
-    .filter((f) => f.price > 0 && f.returnAt);
+  async function fetchFlights(dep: string, ret: string | null): Promise<FlightOption[]> {
+    const results = await Promise.allSettled(
+      targets.map(async (t) => {
+        const raw = await fetchPrices(origin, t.iata, dep, ret, perDest, token!);
+        return raw.map((r) => {
+          const o = r as Record<string, unknown>;
+          return {
+            cityHe: t.cityHe,
+            cityEn: t.en,
+            iata: t.iata,
+            price: Number(o.price),
+            departureAt: String(o.departure_at ?? ""),
+            returnAt: String(o.return_at ?? ""),
+            airline: String(o.airline ?? ""),
+            transfers: Number(o.transfers ?? 0),
+            nights: o.return_at ? toNights(String(o.departure_at), String(o.return_at)) : 0,
+            link: String(o.link ?? ""),
+          } satisfies FlightOption;
+        });
+      })
+    );
+    return results
+      .filter((r): r is PromiseFulfilledResult<FlightOption[]> => r.status === "fulfilled")
+      .flatMap((r) => r.value)
+      .filter((f) => f.price > 0 && f.returnAt);
+  }
+
+  let all = await fetchFlights(departureAt, returnAt);
+
+  // תאריכים מדויקים לרוב מחזירים ריק ב-Travelpayouts, אז נופלים לחיפוש לפי החודש
+  // ומסננים אחר כך לפי מספר הלילות המבוקש, כדי שתמיד יופיעו דילים בריבועים
+  let effectiveNights = params.nights;
+  if (all.length === 0 && params.dateMode === "exact" && params.from) {
+    all = await fetchFlights(params.from.slice(0, 7), null);
+    if (params.to) {
+      effectiveNights = Math.round(
+        (new Date(params.to).getTime() - new Date(params.from).getTime()) / 86400000
+      );
+    }
+  }
 
   // סינון לפי טווח תאריכים
   if (params.dateMode === "range" && params.from && params.to) {
@@ -197,7 +213,7 @@ export async function searchFlights(params: FlightSearchParams): Promise<{
   }
 
   const filters: ((f: FlightOption) => boolean)[] = [];
-  if (params.nights) filters.push((f) => Math.abs(f.nights - params.nights!) <= 1);
+  if (effectiveNights) filters.push((f) => Math.abs(f.nights - effectiveNights!) <= 2);
   if (params.weekends) filters.push((f) => isWeekendTrip(f.departureAt, f.returnAt));
   if (params.direct) filters.push((f) => f.transfers === 0);
 

@@ -121,7 +121,7 @@ export default async function Home() {
                 key={deal.iata}
                 href={{
                   pathname: "/plan",
-                  query: { dest: deal.cityHe, month: deal.month, flightPrice: deal.priceIls ?? "" },
+                  query: { dest: deal.cityHe, month: deal.month, flightPrice: deal.priceIls ?? "", dateMode: "month", adults: "2", rooms: "1" },
                 }}
                 className="group overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
               >
