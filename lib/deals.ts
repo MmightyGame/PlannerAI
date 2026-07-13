@@ -31,7 +31,11 @@ export type FlightSearchParams = {
   weekends: boolean;
   direct: boolean;
   anystops: boolean;
+  israeli: boolean;
 };
+
+// חברות תעופה ישראליות: אל על, ישראייר, ארקיע
+const ISRAELI_AIRLINES = new Set(["LY", "6H", "IZ"]);
 
 const DESTINATIONS: { iata: string; city: string; cityHe: string }[] = [
   { iata: "ATH", city: "Athens", cityHe: "אתונה" },
@@ -225,6 +229,12 @@ export async function searchFlights(params: FlightSearchParams): Promise<{
 
   const filtered = all.filter((f) => soft.every((fn) => fn(f)));
   let pool = filtered.length > 0 ? filtered : all;
+
+  // ביקש חברות ישראליות: מסננים לאל על/ישראייר/ארקיע. אם אין - נופלים לכל השאר
+  if (params.israeli) {
+    const isr = pool.filter((f) => ISRAELI_AIRLINES.has(f.airline));
+    if (isr.length > 0) pool = isr;
+  }
 
   // ברירת מחדל: מעדיפים טיסות ישירות. אם אין ישירות מציגים עם עצירות,
   // אלא אם המשתמש ביקש במפורש רק ישירות - אז רק ישירות

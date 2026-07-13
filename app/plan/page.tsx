@@ -100,7 +100,7 @@ const HE_MONTHS = [
   "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
 ];
 
-type FlightReq = { dest: string; month: string; from?: string; to?: string; nights: string; direct: boolean; anystops: boolean };
+type FlightReq = { dest: string; month: string; from?: string; to?: string; nights: string; direct: boolean; anystops: boolean; israeli: boolean };
 
 function monthFromText(text: string, monthIdx: number): string {
   const now = new Date();
@@ -172,6 +172,8 @@ function resolveFlightRequest(text: string, last: FlightReq | null): FlightReq |
   const dates = parseDates(text, nightsNum);
   const wantsStops = /עצירות|עצירה|קונקשן|לא ישיר/.test(text);
   const wantsDirect = /ישיר|בלי עצירות|נונ.?סטופ|non.?stop/i.test(text);
+  const wantsIsraeli = /ישראלי|חברה ישראל|אל.?על|ישראייר|ארקיע/.test(text);
+  const notIsraeli = /לא ישראלי|בלי אל.?על|זר|לואו קוסט|low.?cost/i.test(text);
   const hasTime = monthIdx >= 0 || !!dates;
 
   // בקשה חדשה מלאה: עיר + זמן (חודש או תאריכים מדויקים)
@@ -184,10 +186,11 @@ function resolveFlightRequest(text: string, last: FlightReq | null): FlightReq |
       nights: nm ? nm[1] : "",
       direct: wantsDirect,
       anystops: wantsStops,
+      israeli: wantsIsraeli,
     };
   }
   // חידוד על חיפוש קיים
-  if (last && (dest || monthIdx >= 0 || dates || nm || wantsStops || wantsDirect)) {
+  if (last && (dest || monthIdx >= 0 || dates || nm || wantsStops || wantsDirect || wantsIsraeli || notIsraeli)) {
     // אם ניתן חודש חדש בלי תאריכים - עוברים למצב חודש (מנקים תאריכים מדויקים)
     const from = dates ? dates.from : monthIdx >= 0 ? undefined : last.from;
     const to = dates ? dates.to : monthIdx >= 0 ? undefined : last.to;
@@ -199,6 +202,7 @@ function resolveFlightRequest(text: string, last: FlightReq | null): FlightReq |
       nights: nm ? nm[1] : last.nights,
       direct: wantsDirect ? true : wantsStops ? false : last.direct,
       anystops: wantsStops ? true : wantsDirect ? false : last.anystops,
+      israeli: wantsIsraeli ? true : notIsraeli ? false : last.israeli,
     };
   }
   return null;
@@ -579,6 +583,7 @@ function Chat() {
       }
       if (req.direct) qs.set("direct", "1");
       if (req.anystops) qs.set("anystops", "1");
+      if (req.israeli) qs.set("israeli", "1");
       const res = await fetch(`/api/search?${qs.toString()}`);
       const data = res.ok ? await res.json() : null;
       setSearching(false);
@@ -633,7 +638,7 @@ function Chat() {
     if (!marker) return;
     const key = `${marker.dest}|${marker.month}|${marker.nights}`;
     if (flightMarkerRef.current === key) return;
-    runPackageSearch({ ...marker, direct: false, anystops: false }, messages);
+    runPackageSearch({ ...marker, direct: false, anystops: false, israeli: false }, messages);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, busy, packages, sp]);
 

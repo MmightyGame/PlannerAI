@@ -29,6 +29,7 @@ export async function GET(req: Request) {
     weekends: sp.get("weekends") === "1",
     direct: sp.get("direct") === "1",
     anystops: sp.get("anystops") === "1",
+    israeli: sp.get("israeli") === "1",
   });
 
   const marker = process.env.NEXT_PUBLIC_TP_MARKER || "";
