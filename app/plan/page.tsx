@@ -475,7 +475,7 @@ function Chat() {
         ? `מלון (הערכת שוק): בערך ${pkg.hotelPerNight.toLocaleString()} ₪ ללילה, סה"כ ~${pkg.hotelPerPerson?.toLocaleString()} ₪ לאדם.\n`
         : "") +
       `סה"כ חבילה: ~${pkg.totalPerPerson.toLocaleString()} ₪ לאדם.\n\n` +
-      `תבנה את התכנון המלא סביב הדיל הזה. התאריכים סגורים, אל תשאל עליהם.`;
+      `בחרתי את הדיל הזה. התאריכים סגורים. תמשיך לפי סדר העבודה - קודם תברר מה שחסר (כולל אם זה עיר אחת או מולטי-סיטי), ורק אחר כך תתכנן.`;
     setPackages(null);
     send(seed, messages);
   }
