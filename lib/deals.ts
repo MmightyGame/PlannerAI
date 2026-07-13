@@ -30,6 +30,7 @@ export type FlightSearchParams = {
   nights: number | null;
   weekends: boolean;
   direct: boolean;
+  anystops: boolean;
 };
 
 const DESTINATIONS: { iata: string; city: string; cityHe: string }[] = [
@@ -228,9 +229,12 @@ export async function searchFlights(params: FlightSearchParams): Promise<{
   // ברירת מחדל: מעדיפים טיסות ישירות. אם אין ישירות מציגים עם עצירות,
   // אלא אם המשתמש ביקש במפורש רק ישירות - אז רק ישירות
   const directPool = pool.filter((f) => f.transfers === 0);
-  if (params.direct || directPool.length > 0) {
-    pool = directPool;
+  if (params.direct) {
+    pool = directPool; // המשתמש ביקש במפורש רק ישירות
+  } else if (!params.anystops && directPool.length > 0) {
+    pool = directPool; // ברירת מחדל: מעדיפים ישירות
   }
+  // אם anystops - משאירים את כל הטיסות כולל עצירות
 
   const relaxed = filtered.length === 0 && all.length > 0 && soft.length > 0;
 

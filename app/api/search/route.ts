@@ -28,6 +28,7 @@ export async function GET(req: Request) {
     nights: Number(sp.get("nights")) || null,
     weekends: sp.get("weekends") === "1",
     direct: sp.get("direct") === "1",
+    anystops: sp.get("anystops") === "1",
   });
 
   const marker = process.env.NEXT_PUBLIC_TP_MARKER || "";

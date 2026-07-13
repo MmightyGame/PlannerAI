@@ -100,24 +100,40 @@ const HE_MONTHS = [
   "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
 ];
 
-function detectFlightRequest(text: string): { dest: string; month: string; nights: string } | null {
-  const dest = HE_CITIES.find((c) => text.includes(c));
-  if (!dest) return null;
-  let monthIdx = -1;
-  for (let i = 0; i < HE_MONTHS.length; i++) {
-    if (text.includes(HE_MONTHS[i])) {
-      monthIdx = i;
-      break;
-    }
-  }
-  if (monthIdx < 0) return null;
+type FlightReq = { dest: string; month: string; nights: string; direct: boolean; anystops: boolean };
+
+function monthFromText(text: string, monthIdx: number): string {
   const now = new Date();
   const yearMatch = text.match(/20\d\d/);
   let year = yearMatch ? Number(yearMatch[0]) : now.getFullYear();
   if (!yearMatch && monthIdx < now.getMonth()) year += 1; // החודש כבר עבר השנה -> שנה הבאה
-  const month = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+  return `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+}
+
+// מזהה בקשת טיסות מההודעה. אם יש חיפוש קודם (last), גם חידוד ("עם עצירות", "חודש אחר",
+// "יותר לילות") מריץ חיפוש מחדש עם השינוי, בלי צורך לחזור על העיר.
+function resolveFlightRequest(text: string, last: FlightReq | null): FlightReq | null {
+  const dest = HE_CITIES.find((c) => text.includes(c)) ?? null;
+  const monthIdx = HE_MONTHS.findIndex((m) => text.includes(m));
   const nm = text.match(/(\d+)\s*(?:לילות|לילה|ימים|יום)/);
-  return { dest, month, nights: nm ? nm[1] : "" };
+  const wantsStops = /עצירות|עצירה|קונקשן|לא ישיר/.test(text);
+  const wantsDirect = /ישיר|בלי עצירות|נונ.?סטופ|non.?stop/i.test(text);
+
+  // בקשה חדשה מלאה: עיר + חודש
+  if (dest && monthIdx >= 0) {
+    return { dest, month: monthFromText(text, monthIdx), nights: nm ? nm[1] : "", direct: wantsDirect, anystops: wantsStops };
+  }
+  // חידוד על חיפוש קיים
+  if (last && (dest || monthIdx >= 0 || nm || wantsStops || wantsDirect)) {
+    return {
+      dest: dest ?? last.dest,
+      month: monthIdx >= 0 ? monthFromText(text, monthIdx) : last.month,
+      nights: nm ? nm[1] : last.nights,
+      direct: wantsDirect ? true : wantsStops ? false : last.direct,
+      anystops: wantsStops ? true : wantsDirect ? false : last.anystops,
+    };
+  }
+  return null;
 }
 
 function stripQuestions(content: string): string {
@@ -325,6 +341,7 @@ function Chat() {
   const [packages, setPackages] = useState<PackageOption[] | null>(null);
   const seededRef = useRef(false);
   const flightMarkerRef = useRef("");
+  const lastSearchRef = useRef<FlightReq | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const bookingLinks = buildBookingLinks(sp.get("dest") ?? "");
@@ -370,10 +387,9 @@ function Chat() {
     }
   }
 
-  async function runPackageSearch(
-    req: { dest: string; month: string; nights: string },
-    history: Msg[]
-  ) {
+  async function runPackageSearch(req: FlightReq, history: Msg[]) {
+    lastSearchRef.current = req;
+    flightMarkerRef.current = `${req.dest}|${req.month}|${req.nights}`;
     setSearching(true);
     try {
       const qs = new URLSearchParams({
@@ -385,6 +401,8 @@ function Chat() {
         rooms: sp.get("rooms") ?? "1",
       });
       if (req.nights) qs.set("nights", req.nights);
+      if (req.direct) qs.set("direct", "1");
+      if (req.anystops) qs.set("anystops", "1");
       const res = await fetch(`/api/search?${qs.toString()}`);
       const data = res.ok ? await res.json() : null;
       setSearching(false);
@@ -435,12 +453,11 @@ function Chat() {
     if (busy || packages) return;
     const last = messages[messages.length - 1];
     if (last?.role !== "assistant") return;
-    const req = parseFlightMarker(last.content);
-    if (!req) return;
-    const key = `${req.dest}|${req.month}|${req.nights}`;
+    const marker = parseFlightMarker(last.content);
+    if (!marker) return;
+    const key = `${marker.dest}|${marker.month}|${marker.nights}`;
     if (flightMarkerRef.current === key) return;
-    flightMarkerRef.current = key;
-    runPackageSearch(req, messages);
+    runPackageSearch({ ...marker, direct: false, anystops: false }, messages);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, busy, packages, sp]);
 
@@ -473,12 +490,12 @@ function Chat() {
     const text = input.trim();
     if (!text || busy || searching) return;
     setInput("");
-    // אם המשתמש כתב עיר + חודש - מזהים לבד ומציגים ריבועי טיסות אמיתיים, בלי לתת ל-AI לטעות ביעד
-    const req = !packages ? detectFlightRequest(text) : null;
+    // עיר+חודש = חיפוש חדש. חידוד ("עם עצירות", "חודש אחר") על חיפוש קיים = חיפוש מחדש עם השינוי.
+    const req = resolveFlightRequest(text, lastSearchRef.current);
     if (req) {
+      setPackages(null);
       const hist: Msg[] = [...messages, { role: "user", content: text }];
       setMessages(hist);
-      flightMarkerRef.current = `${req.dest}|${req.month}|${req.nights}`;
       runPackageSearch(req, hist);
       return;
     }
