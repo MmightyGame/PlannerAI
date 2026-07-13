@@ -56,8 +56,18 @@ function extractQuestions(content: string): string[] {
   return out;
 }
 
+// ה-AI מסמן שהוא רוצה שהמערכת תציג ריבועי טיסות אמיתיים במקום לרשום אותן בטקסט
+function parseFlightMarker(content: string): { dest: string; month: string; nights: string } | null {
+  const m = content.match(/\[FLIGHTS\s+dest=([^|\]]+?)\s*\|\s*month=(\d{4}-\d{2})(?:\s*\|\s*nights=(\d+))?\s*\]/i);
+  if (!m) return null;
+  return { dest: m[1].trim(), month: m[2], nights: m[3] || "" };
+}
+
 function stripQuestions(content: string): string {
-  return content.replace(/^\s*\[Q\].*$/gm, "").trim();
+  return content
+    .replace(/^\s*\[Q\].*$/gm, "")
+    .replace(/\[FLIGHTS[^\]]*\]/gi, "")
+    .trim();
 }
 
 function baseSeed(sp: URLSearchParams): string | null {
@@ -259,6 +269,7 @@ function Chat() {
   const [searching, setSearching] = useState(false);
   const [packages, setPackages] = useState<PackageOption[] | null>(null);
   const seededRef = useRef(false);
+  const flightMarkerRef = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const bookingLinks = buildBookingLinks(sp.get("dest") ?? "");
@@ -329,6 +340,46 @@ function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // כשה-AI מסיים לענות ומופיע סימון [FLIGHTS ...] - מחפשים טיסות אמיתיות ומציגים ריבועים
+  useEffect(() => {
+    if (busy || packages) return;
+    const last = messages[messages.length - 1];
+    if (last?.role !== "assistant") return;
+    const req = parseFlightMarker(last.content);
+    if (!req) return;
+    const key = `${req.dest}|${req.month}|${req.nights}`;
+    if (flightMarkerRef.current === key) return;
+    flightMarkerRef.current = key;
+    (async () => {
+      setSearching(true);
+      try {
+        const qs = new URLSearchParams({
+          dest: req.dest,
+          origin: sp.get("origin") ?? "TLV",
+          dateMode: "month",
+          month: req.month,
+          adults: sp.get("adults") ?? "2",
+          rooms: sp.get("rooms") ?? "1",
+        });
+        if (req.nights) qs.set("nights", req.nights);
+        const res = await fetch(`/api/search?${qs.toString()}`);
+        const data = res.ok ? await res.json() : null;
+        setSearching(false);
+        if (data?.packages?.length > 0) {
+          setPackages(data.packages);
+        } else {
+          // לא נמצאו טיסות אמיתיות - שה-AI ימשיך לתכנן בלי מחיר טיסה מדויק
+          send(
+            `לא נמצאו טיסות אמיתיות ל${req.dest} בחודש ${req.month}. תתכנן בלי הריבועים, תשתמש בהערכת מחיר טיסה ותציין שזו הערכה.`,
+            messages
+          );
+        }
+      } catch {
+        setSearching(false);
+      }
+    })();
+  }, [messages, busy, packages, sp]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, packages]);
@@ -345,13 +396,13 @@ function Chat() {
       `סה"כ חבילה: ~${pkg.totalPerPerson.toLocaleString()} ₪ לאדם.\n\n` +
       `תבנה את התכנון המלא סביב הדיל הזה. התאריכים סגורים, אל תשאל עליהם.`;
     setPackages(null);
-    send(seed, []);
+    send(seed, messages);
   }
 
   function skipPackages() {
     setPackages(null);
-    const seed = baseSeed(sp);
-    if (seed) send(seed, []);
+    const seed = baseSeed(sp) ?? "בלי דיל ספציפי, תתכנן לי את החופשה ותציע בעצמך.";
+    send(seed, messages);
   }
 
   function handleSubmit() {
@@ -396,29 +447,6 @@ function Chat() {
           </div>
         )}
 
-        {/* בחירת דיל לפני התכנון */}
-        {packages && (
-          <div>
-            <div className="mb-4 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
-              <div className="text-lg font-black">מצאתי לך {packages.length} דילים אמיתיים 🎯</div>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                טיסות במחיר אמת + הערכת מלון לתאריכים. בחר דיל וה-AI יבנה סביבו את כל החופשה.
-              </p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              {packages.map((p, i) => (
-                <PackageCard key={i} pkg={p} onChoose={() => choosePackage(p)} />
-              ))}
-            </div>
-            <button
-              onClick={skipPackages}
-              className="mt-4 w-full rounded-xl border border-[var(--line)] bg-white py-2.5 text-sm font-bold text-[var(--muted)] transition hover:text-[var(--ink)]"
-            >
-              בלי דיל, פשוט תתכנן לי ותציע בעצמך
-            </button>
-          </div>
-        )}
-
         <div className="flex flex-col gap-4">
           {messages.map((m, i) =>
             m.role === "user" ? (
@@ -446,6 +474,29 @@ function Chat() {
             )
           )}
         </div>
+
+        {/* בחירת דיל - ריבועי טיסה+מלון אמיתיים */}
+        {packages && (
+          <div className="mt-4">
+            <div className="mb-4 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+              <div className="text-lg font-black">מצאתי לך {packages.length} דילים אמיתיים 🎯</div>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                טיסות במחיר אמת + הערכת מלון לתאריכים. בחר דיל וה-AI יבנה סביבו את כל החופשה.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {packages.map((p, i) => (
+                <PackageCard key={i} pkg={p} onChoose={() => choosePackage(p)} />
+              ))}
+            </div>
+            <button
+              onClick={skipPackages}
+              className="mt-4 w-full rounded-xl border border-[var(--line)] bg-white py-2.5 text-sm font-bold text-[var(--muted)] transition hover:text-[var(--ink)]"
+            >
+              בלי דיל, פשוט תתכנן לי ותציע בעצמך
+            </button>
+          </div>
+        )}
 
         {/* אשף שאלות - אחת אחת */}
         {pendingQuestions.length > 0 && (
