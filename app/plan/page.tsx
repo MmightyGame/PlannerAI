@@ -100,7 +100,7 @@ const HE_MONTHS = [
   "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
 ];
 
-type FlightReq = { dest: string; month: string; nights: string; direct: boolean; anystops: boolean };
+type FlightReq = { dest: string; month: string; from?: string; to?: string; nights: string; direct: boolean; anystops: boolean };
 
 function monthFromText(text: string, monthIdx: number): string {
   const now = new Date();
@@ -110,24 +110,92 @@ function monthFromText(text: string, monthIdx: number): string {
   return `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
 }
 
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+function inferYear(month: number, day: number, explicit?: number): number {
+  if (explicit) return explicit;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const d = new Date(now.getFullYear(), month - 1, day);
+  return d < today ? now.getFullYear() + 1 : now.getFullYear();
+}
+
+// מזהה תאריכים מדויקים מההודעה: "18-24.9", "18.9 עד 24.9", "18-24 בספטמבר", "18.9" + לילות
+function parseDates(text: string, nights: number | null): { from: string; to: string } | null {
+  const yr = text.match(/20\d\d/);
+  const explicit = yr ? Number(yr[0]) : undefined;
+
+  // טווח באותו חודש מספרי: "18-24.9"
+  let m = text.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s*[./]\s*(\d{1,2})/);
+  if (m) {
+    const d1 = +m[1], d2 = +m[2], mon = +m[3];
+    const y = inferYear(mon, d1, explicit);
+    return { from: `${y}-${pad(mon)}-${pad(d1)}`, to: `${y}-${pad(mon)}-${pad(d2)}` };
+  }
+  // טווח עם שם חודש: "18-24 בספטמבר"
+  m = text.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s+ב?([א-ת]+)/);
+  if (m) {
+    const mon = HE_MONTHS.indexOf(m[3]) + 1;
+    if (mon > 0) {
+      const d1 = +m[1], d2 = +m[2], y = inferYear(mon, d1, explicit);
+      return { from: `${y}-${pad(mon)}-${pad(d1)}`, to: `${y}-${pad(mon)}-${pad(d2)}` };
+    }
+  }
+  // שני תאריכים מספריים: "18.9 ... 24.9"
+  const dm = [...text.matchAll(/(\d{1,2})\s*[./]\s*(\d{1,2})(?:\s*[./]\s*(\d{2,4}))?/g)];
+  const toYear = (raw?: string) => (raw ? (+raw < 100 ? 2000 + +raw : +raw) : undefined);
+  if (dm.length >= 2) {
+    const a = dm[0], b = dm[1];
+    const ay = inferYear(+a[2], +a[1], toYear(a[3]) ?? explicit);
+    const by = inferYear(+b[2], +b[1], toYear(b[3]) ?? explicit);
+    return { from: `${ay}-${pad(+a[2])}-${pad(+a[1])}`, to: `${by}-${pad(+b[2])}-${pad(+b[1])}` };
+  }
+  // תאריך יחיד + לילות: "18.9 ל-5 לילות"
+  if (dm.length === 1 && nights) {
+    const a = dm[0], d = +a[1], mon = +a[2];
+    const y = inferYear(mon, d, toYear(a[3]) ?? explicit);
+    const from = new Date(y, mon - 1, d);
+    const to = new Date(from.getTime() + nights * 86400000);
+    return { from: `${y}-${pad(mon)}-${pad(d)}`, to: `${to.getFullYear()}-${pad(to.getMonth() + 1)}-${pad(to.getDate())}` };
+  }
+  return null;
+}
+
 // מזהה בקשת טיסות מההודעה. אם יש חיפוש קודם (last), גם חידוד ("עם עצירות", "חודש אחר",
 // "יותר לילות") מריץ חיפוש מחדש עם השינוי, בלי צורך לחזור על העיר.
 function resolveFlightRequest(text: string, last: FlightReq | null): FlightReq | null {
   const dest = HE_CITIES.find((c) => text.includes(c)) ?? null;
   const monthIdx = HE_MONTHS.findIndex((m) => text.includes(m));
   const nm = text.match(/(\d+)\s*(?:לילות|לילה|ימים|יום)/);
+  const nightsNum = nm ? Number(nm[1]) : null;
+  const dates = parseDates(text, nightsNum);
   const wantsStops = /עצירות|עצירה|קונקשן|לא ישיר/.test(text);
   const wantsDirect = /ישיר|בלי עצירות|נונ.?סטופ|non.?stop/i.test(text);
+  const hasTime = monthIdx >= 0 || !!dates;
 
-  // בקשה חדשה מלאה: עיר + חודש
-  if (dest && monthIdx >= 0) {
-    return { dest, month: monthFromText(text, monthIdx), nights: nm ? nm[1] : "", direct: wantsDirect, anystops: wantsStops };
+  // בקשה חדשה מלאה: עיר + זמן (חודש או תאריכים מדויקים)
+  if (dest && hasTime) {
+    return {
+      dest,
+      month: dates ? dates.from.slice(0, 7) : monthFromText(text, monthIdx),
+      from: dates?.from,
+      to: dates?.to,
+      nights: nm ? nm[1] : "",
+      direct: wantsDirect,
+      anystops: wantsStops,
+    };
   }
   // חידוד על חיפוש קיים
-  if (last && (dest || monthIdx >= 0 || nm || wantsStops || wantsDirect)) {
+  if (last && (dest || monthIdx >= 0 || dates || nm || wantsStops || wantsDirect)) {
+    // אם ניתן חודש חדש בלי תאריכים - עוברים למצב חודש (מנקים תאריכים מדויקים)
+    const from = dates ? dates.from : monthIdx >= 0 ? undefined : last.from;
+    const to = dates ? dates.to : monthIdx >= 0 ? undefined : last.to;
     return {
       dest: dest ?? last.dest,
-      month: monthIdx >= 0 ? monthFromText(text, monthIdx) : last.month,
+      month: dates ? dates.from.slice(0, 7) : monthIdx >= 0 ? monthFromText(text, monthIdx) : last.month,
+      from,
+      to,
       nights: nm ? nm[1] : last.nights,
       direct: wantsDirect ? true : wantsStops ? false : last.direct,
       anystops: wantsStops ? true : wantsDirect ? false : last.anystops,
@@ -496,12 +564,19 @@ function Chat() {
       const qs = new URLSearchParams({
         dest: req.dest,
         origin: sp.get("origin") ?? "TLV",
-        dateMode: "month",
-        month: req.month,
         adults: sp.get("adults") ?? "2",
         rooms: sp.get("rooms") ?? "1",
       });
-      if (req.nights) qs.set("nights", req.nights);
+      if (req.from && req.to) {
+        // תאריכים מדויקים - חיפוש קרוב לתאריכים שנבחרו
+        qs.set("dateMode", "exact");
+        qs.set("from", req.from);
+        qs.set("to", req.to);
+      } else {
+        qs.set("dateMode", "month");
+        qs.set("month", req.month);
+        if (req.nights) qs.set("nights", req.nights);
+      }
       if (req.direct) qs.set("direct", "1");
       if (req.anystops) qs.set("anystops", "1");
       const res = await fetch(`/api/search?${qs.toString()}`);
