@@ -136,10 +136,23 @@ function resolveFlightRequest(text: string, last: FlightReq | null): FlightReq |
   return null;
 }
 
+type DayPoi = { day: number; city: string; places: string[] };
+
+// ה-AI מסמן לכל יום את המקומות שלו: [POI day=1 | city=אתונה | places=א; ב; ג]
+function parsePois(content: string): DayPoi[] {
+  const out: DayPoi[] = [];
+  for (const m of content.matchAll(/\[POI\s+day=(\d+)\s*\|\s*city=([^|\]]+?)\s*\|\s*places=([^\]]+?)\s*\]/gi)) {
+    const places = m[3].split(/;|·/).map((p) => p.trim()).filter(Boolean);
+    if (places.length) out.push({ day: Number(m[1]), city: m[2].trim(), places });
+  }
+  return out;
+}
+
 function stripQuestions(content: string): string {
   return content
     .replace(/^\s*\[Q\].*$/gm, "")
     .replace(/\[FLIGHTS[^\]]*\]/gi, "")
+    .replace(/\[POI[^\]]*\]/gi, "")
     .trim();
 }
 
@@ -332,6 +345,87 @@ function StreamingWords({ text }: { text: string }) {
   );
 }
 
+const GMAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+
+function gmapsSearchUrl(query: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+// מפה מוטמעת ליום דרך Google Maps Embed API (חינם ללא הגבלה). דורש מפתח.
+function dayEmbedUrl(poi: DayPoi): string | null {
+  if (!GMAPS_KEY) return null;
+  const q = (p: string) => encodeURIComponent(`${p} ${poi.city}`);
+  if (poi.places.length === 1) {
+    return `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${q(poi.places[0])}`;
+  }
+  const origin = q(poi.places[0]);
+  const destination = q(poi.places[poi.places.length - 1]);
+  const waypoints = poi.places.slice(1, -1).map(q).join("|");
+  let url = `https://www.google.com/maps/embed/v1/directions?key=${GMAPS_KEY}&origin=${origin}&destination=${destination}&mode=walking`;
+  if (waypoints) url += `&waypoints=${waypoints}`;
+  return url;
+}
+
+// מפה + אטרקציות לכל יום. עם מפתח Google - מפה מוטמעת. בלי מפתח - צ'יפים שנפתחים בגוגל מפות.
+function DayMaps({ pois }: { pois: DayPoi[] }) {
+  const [open, setOpen] = useState(pois[0]?.day ?? 1);
+  const active = pois.find((p) => p.day === open) ?? pois[0];
+  if (!active) return null;
+  const embed = dayEmbedUrl(active);
+  return (
+    <div className="mt-6 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+      <div className="mb-3 text-sm font-black">🗺️ מפה לכל יום</div>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {pois.map((p) => (
+          <button
+            key={p.day}
+            type="button"
+            onClick={() => setOpen(p.day)}
+            className={`rounded-full px-3 py-1 text-sm font-bold transition ${
+              open === p.day ? "bg-[var(--green)] text-white" : "bg-[var(--sand)] text-[var(--ink)]/70 hover:text-[var(--ink)]"
+            }`}
+          >
+            יום {p.day}
+          </button>
+        ))}
+      </div>
+      {embed && (
+        <iframe
+          title={`מפה יום ${active.day}`}
+          src={embed}
+          className="mb-3 h-64 w-full rounded-xl border-0"
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          allowFullScreen
+        />
+      )}
+      <div className="flex flex-wrap gap-2">
+        {active.places.map((place) => (
+          <a
+            key={place}
+            href={gmapsSearchUrl(`${place} ${active.city}`)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-sm transition hover:border-[var(--green)] hover:text-[var(--green)]"
+          >
+            📍 {place}
+          </a>
+        ))}
+      </div>
+      {!embed && (
+        <a
+          href={gmapsSearchUrl(`${active.places.join(", ")} ${active.city}`)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-block text-sm font-bold text-[var(--green)] hover:underline"
+        >
+          פתח את היום בגוגל מפות ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
 function Chat() {
   const sp = useSearchParams();
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -346,6 +440,13 @@ function Chat() {
 
   const bookingLinks = buildBookingLinks(sp.get("dest") ?? "");
   const hasPlan = messages.some((m) => m.role === "assistant" && m.content.length > 600);
+
+  // אוסף את מקומות כל יום מהתכנון (היום האחרון שנכתב מנצח)
+  const pois = (() => {
+    const map = new Map<number, DayPoi>();
+    for (const m of messages) if (m.role === "assistant") for (const p of parsePois(m.content)) map.set(p.day, p);
+    return [...map.values()].sort((a, b) => a.day - b.day);
+  })();
 
   const lastMsg = messages[messages.length - 1];
   // אם ה-AI ביקש להציג טיסות, בחירת הטיסה קודמת - לא מציגים שאלות באותו רגע
@@ -594,6 +695,8 @@ function Chat() {
         )}
 
         {/* Booking links */}
+        {hasPlan && pois.length > 0 && <DayMaps pois={pois} />}
+
         {hasPlan && (
           <div className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--sand)] p-4">
             <div className="mb-3 text-sm font-bold text-[var(--ink)]/75">
