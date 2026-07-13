@@ -522,6 +522,7 @@ function Chat() {
   const [busy, setBusy] = useState(false);
   const [searching, setSearching] = useState(false);
   const [packages, setPackages] = useState<PackageOption[] | null>(null);
+  const [exactNote, setExactNote] = useState<{ from: string; to: string; url: string | null } | null>(null);
   const seededRef = useRef(false);
   const flightMarkerRef = useRef("");
   const lastSearchRef = useRef<FlightReq | null>(null);
@@ -604,6 +605,11 @@ function Chat() {
       const res = await fetch(`/api/search?${qs.toString()}`);
       const data = res.ok ? await res.json() : null;
       setSearching(false);
+      setExactNote(
+        req.from && req.to && data?.exactMiss
+          ? { from: req.from, to: req.to, url: data.exactSearchUrl ?? null }
+          : null
+      );
       if (data?.packages?.length > 0) {
         setPackages(data.packages);
       } else {
@@ -633,6 +639,12 @@ function Chat() {
         const res = await fetch(`/api/search?${sp.toString()}`);
         const data = res.ok ? await res.json() : null;
         setSearching(false);
+        const spFrom = sp.get("from"), spTo = sp.get("to");
+        setExactNote(
+          spFrom && spTo && data?.exactMiss
+            ? { from: spFrom, to: spTo, url: data.exactSearchUrl ?? null }
+            : null
+        );
         if (data?.packages?.length > 0) {
           setPackages(data.packages);
         } else {
@@ -665,11 +677,13 @@ function Chat() {
       `סה"כ חבילה: ~${pkg.totalPerPerson.toLocaleString()} ₪ לאדם.\n\n` +
       `בחרתי את הדיל הזה. התאריכים סגורים. תמשיך לפי סדר העבודה - קודם תברר מה שחסר (כולל אם זה עיר אחת או מולטי-סיטי), ורק אחר כך תתכנן.`;
     setPackages(null);
+    setExactNote(null);
     send(seed, messages);
   }
 
   function skipPackages() {
     setPackages(null);
+    setExactNote(null);
     const seed = baseSeed(sp) ?? "בלי דיל ספציפי, תתכנן לי את החופשה ותציע בעצמך.";
     send(seed, messages);
   }
@@ -682,6 +696,7 @@ function Chat() {
     const req = resolveFlightRequest(text, lastSearchRef.current);
     if (req) {
       setPackages(null);
+      setExactNote(null);
       const hist: Msg[] = [...messages, { role: "user", content: text }];
       setMessages(hist);
       runPackageSearch(req, hist);
@@ -762,6 +777,28 @@ function Chat() {
                 טיסות במחיר אמת + הערכת מלון לתאריכים. בחר דיל וה-AI יבנה סביבו את כל החופשה.
               </p>
             </div>
+            {exactNote && (
+              <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
+                <div className="font-black text-amber-900">
+                  לא נמצא מחיר מוכן בדיוק לתאריכים {exactNote.from.slice(8, 10)}.{exactNote.from.slice(5, 7)}
+                  {" עד "}
+                  {exactNote.to.slice(8, 10)}.{exactNote.to.slice(5, 7)}
+                </div>
+                <p className="mt-1 text-amber-800">
+                  הריבועים למטה הם הכי קרוב שיש במאגר, לא בהכרח בתאריך המדויק. לטיסות אמיתיות בתאריכים שלך:
+                </p>
+                {exactNote.url && (
+                  <a
+                    href={exactNote.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block rounded-xl bg-amber-500 px-4 py-2 font-black text-white transition hover:bg-amber-600"
+                  >
+                    חיפוש חי ב-Aviasales לתאריכים שלך ↗
+                  </a>
+                )}
+              </div>
+            )}
             <div className="grid gap-4 md:grid-cols-3">
               {packages.map((p, i) => (
                 <PackageCard key={i} pkg={p} onChoose={() => choosePackage(p)} />

@@ -59,5 +59,24 @@ export async function GET(req: Request) {
     })
   );
 
-  return Response.json({ ...result, packages });
+  // תאריכים מדויקים: Travelpayouts מחזיר מטמון דליל שלרוב ריק לתאריך ספציפי.
+  // אם אף טיסה לא יוצאת בדיוק בתאריך המבוקש - זו "החטאה", והריבועים הם רק קירוב.
+  // במקרה כזה נותנים קישור לחיפוש חי ב-Aviasales בתאריכים המדויקים (חינם, אמיתי).
+  const from = sp.get("from") ?? "";
+  const to = sp.get("to") ?? "";
+  const exactMiss =
+    dateMode === "exact" && !!from && !result.flights.some((f) => f.departureAt.slice(0, 10) === from);
+  const iata = result.flights[0]?.iata ?? "";
+  const ddmm = (iso: string) => {
+    const [, m, d] = iso.split("-");
+    return d && m ? `${d}${m}` : "";
+  };
+  const originCode = sp.get("origin") === "ETM" ? "ETM" : "TLV";
+  const exactSearchUrl =
+    dateMode === "exact" && from && to && iata
+      ? `https://www.aviasales.com/search/${originCode}${ddmm(from)}${iata}${ddmm(to)}${adults}` +
+        (marker ? `?marker=${marker}` : "")
+      : null;
+
+  return Response.json({ ...result, packages, exactMiss, exactSearchUrl });
 }
