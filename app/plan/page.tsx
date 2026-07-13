@@ -629,18 +629,8 @@ function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // כשה-AI מסיים לענות ומופיע סימון [FLIGHTS ...] - מחפשים טיסות אמיתיות ומציגים ריבועים
-  useEffect(() => {
-    if (busy || packages) return;
-    const last = messages[messages.length - 1];
-    if (last?.role !== "assistant") return;
-    const marker = parseFlightMarker(last.content);
-    if (!marker) return;
-    const key = `${marker.dest}|${marker.month}|${marker.nights}`;
-    if (flightMarkerRef.current === key) return;
-    runPackageSearch({ ...marker, direct: false, anystops: false, israeli: false }, messages);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, busy, packages, sp]);
+  // הערה: הטיסות מנוהלות רק ע"י זיהוי בפרונט (resolveFlightRequest), לא ע"י ה-AI,
+  // כי המודל החינמי מזה יעדים. אין חיפוש שמופעל מהודעת ה-AI.
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
