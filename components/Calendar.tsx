@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronRight, ChevronLeft } from "lucide-react";
 
 const HEBREW_MONTHS = [
   "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
@@ -13,20 +14,22 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function nightsBetween(a: string, b: string): number {
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
+}
+
 function MonthGrid({
-  year,
-  month,
-  from,
-  to,
-  today,
-  onPick,
+  year, month, from, to, hover, selecting, today, onPick, onHover,
 }: {
   year: number;
   month: number; // 0-11
   from: string;
   to: string;
+  hover: string;
+  selecting: boolean;
   today: string;
   onPick: (date: string) => void;
+  onHover: (date: string) => void;
 }) {
   const firstDay = new Date(year, month, 1).getDay(); // 0=ראשון
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -51,15 +54,24 @@ function MonthGrid({
           const past = date < today;
           const isFrom = date === from;
           const isTo = date === to;
-          const inRange = from && to && date > from && date < to;
+          const inRange = !!(from && to && date > from && date < to);
+          // תצוגה מקדימה בזמן ריחוף: אחרי בחירת תאריך ראשון, עד היעד שהעכבר עליו
+          const previewEnd = selecting && !!hover && hover > from && date === hover;
+          const inPreview = selecting && !!hover && hover > from && date > from && date < hover;
+          const isEnd = isTo || previewEnd;
+          const highlighted = inRange || inPreview || isFrom || isEnd;
           return (
-            <div key={date} className={`flex justify-center ${inRange || isFrom || isTo ? "bg-[#0c5138]/10" : ""} ${isFrom ? "rounded-r-full" : ""} ${isTo ? "rounded-l-full" : ""}`}>
+            <div
+              key={date}
+              className={`flex justify-center ${highlighted ? "bg-[#0c5138]/10" : ""} ${isFrom ? "rounded-r-full" : ""} ${isEnd ? "rounded-l-full" : ""}`}
+            >
               <button
                 type="button"
                 disabled={past}
                 onClick={() => onPick(date)}
+                onMouseEnter={() => { if (!past) onHover(date); }}
                 className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition ${
-                  isFrom || isTo
+                  isFrom || isEnd
                     ? "bg-[var(--green)] text-white"
                     : past
                       ? "text-[var(--ink)]/25"
@@ -87,13 +99,15 @@ export default function Calendar({
 }) {
   const now = new Date();
   const today = ymd(now);
-  const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
+  // פתיחה על החודש של התאריך שכבר נבחר (אם יש), אחרת החודש הנוכחי
+  const start = from ? new Date(from) : now;
+  const [view, setView] = useState({ year: start.getFullYear(), month: start.getMonth() });
+  const [hover, setHover] = useState("");
 
   function shift(delta: number) {
     setView((v) => {
       const d = new Date(v.year, v.month + delta, 1);
-      // לא אחורה מהחודש הנוכחי
-      if (d < new Date(now.getFullYear(), now.getMonth(), 1)) return v;
+      if (d < new Date(now.getFullYear(), now.getMonth(), 1)) return v; // לא אחורה מהחודש הנוכחי
       return { year: d.getFullYear(), month: d.getMonth() };
     });
   }
@@ -108,40 +122,55 @@ export default function Calendar({
     }
   }
 
+  const selecting = !!from && !to;
+  const nights =
+    from && to ? nightsBetween(from, to)
+      : selecting && hover && hover > from ? nightsBetween(from, hover)
+        : null;
+
   const second = new Date(view.year, view.month + 1, 1);
 
   return (
-    <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+    <div className="rounded-xl border border-[var(--line)] bg-white p-4" onMouseLeave={() => setHover("")}>
       <div className="mb-2 flex items-center justify-between">
         <button
           type="button"
           onClick={() => shift(-1)}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] font-bold hover:bg-[var(--sand)]"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] hover:bg-[var(--sand)]"
           aria-label="חודש קודם"
         >
-          ›
+          <ChevronRight className="h-4 w-4" />
         </button>
-        <div className="text-xs text-[var(--muted)]">
-          {!from ? "בחרו תאריך יציאה" : !to ? "עכשיו תאריך חזרה" : "אפשר לבחור מחדש"}
-        </div>
+        {nights !== null ? (
+          <span className="rounded-full bg-[var(--green)] px-3 py-1 text-xs font-black text-white">
+            {nights} לילות
+          </span>
+        ) : (
+          <div className="text-xs text-[var(--muted)]">
+            {!from ? "בחרו תאריך יציאה" : !to ? "עכשיו תאריך חזרה" : "אפשר לבחור מחדש"}
+          </div>
+        )}
         <button
           type="button"
           onClick={() => shift(1)}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] font-bold hover:bg-[var(--sand)]"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] hover:bg-[var(--sand)]"
           aria-label="חודש הבא"
         >
-          ‹
+          <ChevronLeft className="h-4 w-4" />
         </button>
       </div>
       <div className="flex flex-col gap-6 md:flex-row">
-        <MonthGrid year={view.year} month={view.month} from={from} to={to} today={today} onPick={pick} />
+        <MonthGrid year={view.year} month={view.month} from={from} to={to} hover={hover} selecting={selecting} today={today} onPick={pick} onHover={setHover} />
         <MonthGrid
           year={second.getFullYear()}
           month={second.getMonth()}
           from={from}
           to={to}
+          hover={hover}
+          selecting={selecting}
           today={today}
           onPick={pick}
+          onHover={setHover}
         />
       </div>
     </div>

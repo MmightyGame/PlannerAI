@@ -1,14 +1,6 @@
 @import "tailwindcss";
 
-/* פונט Futura 100 Heb - זורקים את קובץ הפונט לתיקייה public/fonts
-   בשם futura-100-heb.woff2 (או otf) והוא נטען אוטומטית */
-@font-face {
-  font-family: "Futura 100 Heb";
-  src: url("/fonts/futura-100-heb.woff2") format("woff2"),
-    url("/fonts/futura-100-heb.otf") format("opentype");
-  font-weight: 100 900;
-  font-display: swap;
-}
+/* Futura 100 Hebrew נטען מ-Adobe Typekit ב-app/layout.tsx (משפחה: futura-100-hebrew) */
 
 :root {
   --bg: #f6f4ef;
@@ -115,4 +107,13 @@ body {
   border-radius: 9999px;
   background: var(--green);
   animation: thinkingDot 1.2s ease-in-out infinite;
+}
+
+/* הסתרת סקרולבר (לבורר גיל הילד וכו') */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
