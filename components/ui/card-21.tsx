@@ -40,21 +40,23 @@ const DestinationCard = React.forwardRef<HTMLDivElement, DestinationCardProps>(
             }}
           />
 
+          {/* דגל בפינה ימנית-עליונה */}
+          <img
+            src={`https://flagcdn.com/${countryCode}.svg`}
+            alt=""
+            loading="lazy"
+            className="absolute right-4 top-4 z-10 h-6 w-auto rounded-[4px] shadow-md ring-1 ring-white/40"
+          />
+
           {/* תוכן */}
           <div className="relative flex h-full flex-col justify-end p-6 text-white">
-            <h3 className="flex items-center gap-2 text-3xl font-black tracking-tight">
+            <h3 className="text-3xl font-bold tracking-tight">
               {location}
-              <img
-                src={`https://flagcdn.com/${countryCode}.svg`}
-                alt=""
-                loading="lazy"
-                className="h-5 w-auto rounded-[3px] shadow-sm ring-1 ring-white/30"
-              />
             </h3>
             <p className="mt-1 text-sm font-medium text-white/85">{stats}</p>
 
             <div className="mt-6 flex items-center justify-between rounded-lg border border-[hsl(var(--theme-color)/0.35)] bg-[hsl(var(--theme-color)/0.25)] px-4 py-3 backdrop-blur-md transition-all duration-300 group-hover:border-[hsl(var(--theme-color)/0.55)] group-hover:bg-[hsl(var(--theme-color)/0.45)]">
-              <span className="text-sm font-bold tracking-wide">גלה עכשיו</span>
+              <span className="text-sm font-medium tracking-wide">גלה עכשיו</span>
               <ArrowLeft className="h-4 w-4 transform transition-transform duration-300 group-hover:-translate-x-1" />
             </div>
           </div>

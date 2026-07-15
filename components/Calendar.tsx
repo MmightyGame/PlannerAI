@@ -40,12 +40,12 @@ function MonthGrid({
 
   return (
     <div className="w-full">
-      <div className="mb-2 text-center font-black">
+      <div className="mb-2 text-center font-bold">
         {HEBREW_MONTHS[month]} {year}
       </div>
       <div className="grid grid-cols-7 gap-y-1 text-center">
         {DAY_LETTERS.map((d) => (
-          <div key={d} className="pb-1 text-xs font-bold text-[var(--muted)]">
+          <div key={d} className="pb-1 text-xs font-medium text-[var(--muted)]">
             {d}
           </div>
         ))}
@@ -70,7 +70,7 @@ function MonthGrid({
                 disabled={past}
                 onClick={() => onPick(date)}
                 onMouseEnter={() => { if (!past) onHover(date); }}
-                className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition ${
+                className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
                   isFrom || isEnd
                     ? "bg-[var(--green)] text-white"
                     : past
@@ -142,7 +142,7 @@ export default function Calendar({
           <ChevronRight className="h-4 w-4" />
         </button>
         {nights !== null ? (
-          <span className="rounded-full bg-[var(--green)] px-3 py-1 text-xs font-black text-white">
+          <span className="rounded-full bg-[var(--green)] px-3 py-1 text-xs font-bold text-white">
             {nights} לילות
           </span>
         ) : (
